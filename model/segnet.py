@@ -308,3 +308,60 @@ class SegMattingNet(nn.Module):
         alpha = self.sigmoid(alpha)
 
         return seg, alpha
+
+
+class SegMattInferNet(nn.Module):
+    def __init__(self):
+        super(SegMattInferNet, self).__init__()
+
+
+        self.seg_extract = ERD_SegNet(classes=2)
+
+        # feather
+        self.convF1 = nn.Conv2d(in_channels=11, out_channels=8, kernel_size=(3, 3), stride=1, padding=1, dilation=1, groups=1, bias=True)
+        self.bn = nn.BatchNorm2d(num_features=8)
+        self.ReLU = nn.ReLU(inplace=True)
+        self.convF2 = nn.Conv2d(in_channels=8, out_channels=3, kernel_size=(3, 3), stride=1, padding=1, dilation=1, groups=1, bias=True)
+        self.sigmoid = nn.Sigmoid()
+        
+
+        # init weights
+        self._init_weight()
+
+    def _init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
+    def forward(self, x):
+        
+        seg = self.seg_extract(x)
+        # shape: n 1 h w
+        seg_softmax = F.softmax(seg, dim=1)
+        bg, fg = torch.split(seg_softmax, 1, dim=1)
+
+        # shape: n 3 h w
+        imgSqr = x * x 
+        imgMasked = x * (torch.cat((fg, fg, fg), 1))
+        # shape: n 11 h w
+        convIn = torch.cat((x, seg_softmax, imgSqr, imgMasked), 1)
+        newconvF1 =  self.ReLU(self.bn(self.convF1(convIn)))
+        newconvF2 = self.convF2(newconvF1)
+        
+        # fethering inputs:
+        a, b, c = torch.split(newconvF2, 1, dim=1)
+
+        #print("seg: {}".format(seg))
+        alpha = a * fg + b * bg + c        
+        alpha = self.sigmoid(alpha)
+
+        return alpha
+
+
+

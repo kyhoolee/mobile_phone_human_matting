@@ -12,6 +12,9 @@ import os
 import numpy as np
 import torch.nn.functional as F
 import pdb
+import copy
+from model.segnet import SegMattingNet, SegMattInferNet
+
 parser = argparse.ArgumentParser(description='Semantic aware super-resolution')
 parser.add_argument('--model', default='./model/*.pt', help='preTrained model')
 parser.add_argument('--inputPath', default='./', help='input data path')
@@ -31,21 +34,23 @@ else:
 def load_model(args):
     print('Loading model from {}...'.format(args.model))
 
-    if args.without_gpu:
-        myModel = torch.load(args.model, map_location=lambda storage, loc: storage)
-    else:
-        myModel = torch.load(args.model)
+    # Using cpu only
+    myModel = SegMattInferNet()
+    state_dict = torch.load(args.model, map_location=torch.device('cpu'))
+    myModel.load_state_dict(state_dict, strict=False)
     myModel.eval()
-    myModel.to(device)
     print(myModel)
-    
+
+    # Convert to mobile 
+    convert_mobile(myModel, args)
+
     return myModel
 
-def np_norm(x):
-    low = x.min()
-    hig = x.max()
-    y = (x - low) / (hig - low)
-    return y
+def convert_mobile(model, args):
+    example = torch.FloatTensor(1, 3, args.size, args.size)
+    print(example.shape)
+    traced_script_module = torch.jit.trace(model, example)
+    traced_script_module.save("jit_model.pt")
 
 def seg_process(args, net):
 
@@ -54,8 +59,13 @@ def seg_process(args, net):
 
     # set grad false
     torch.set_grad_enabled(False)
-    i = 1
+    i = 0.001
     t_all = 0
+
+    directory = args.savePath
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
     for f in filelist:
 
         print('The %dth image : %s ...'%(i,f))
@@ -64,14 +74,15 @@ def seg_process(args, net):
         # image = image[:,400:,:]
         origin_h, origin_w, c = image.shape
         image_resize = cv2.resize(image, (args.size,args.size), interpolation=cv2.INTER_CUBIC)
-        image_resize = (image_resize - (104., 112., 121.,)) / 255.0        
+        image_resize = (image_resize - (104., 112., 121.,)) / 255.0   
+        print(image_resize.shape)     
 
         tensor_4D = torch.FloatTensor(1, 3, args.size, args.size)
         tensor_4D[0,:,:,:] = torch.FloatTensor(image_resize.transpose(2,0,1))
         inputs = tensor_4D.to(device)
 
         t0 = time.time()
-        seg, alpha = net(inputs)
+        alpha = net(inputs)
 
 
         if args.without_gpu:
@@ -81,7 +92,28 @@ def seg_process(args, net):
 
         tt = (time.time() - t0)
 
+        # print(seg)
+        # print(seg.shape)
+        # np.savetxt(os.path.join(args.savePath, f[:-4] + '_seg_.csv'), seg.data.numpy())
+        # cv2.imwrite(os.path.join(args.savePath, f[:-4] + '_seg_.png'), seg.data.numpy())
+
+        # numpy.savetxt("foo.csv", a, delimiter=",")
+        import pandas as pd
+        df = pd.DataFrame(alpha_np)
+        df = df.applymap(lambda x: 1.0 if x > 0.5 else 0.0)
+        alpha_np = df.to_numpy()
+
+        np.savetxt(os.path.join(args.savePath, f[:-4] + '_alpha_.csv'), alpha_np)
+
+        cv2.imwrite(os.path.join(args.savePath, f[:-4] + '_alpha_.png'), alpha_np*255)
+
+
+
         alpha_np = cv2.resize(alpha_np, (origin_w, origin_h), interpolation=cv2.INTER_CUBIC)
+        print(alpha_np)
+        print(alpha_np.shape)
+        
+        
 
         seg_fg = np.multiply(alpha_np[..., np.newaxis], image)
 
@@ -90,6 +122,7 @@ def seg_process(args, net):
 
         i+=1
         t_all += tt
+        # break
 
     print("image number: {} mean matting time : {:.0f} ms".format(i, t_all/i*1000))
 
