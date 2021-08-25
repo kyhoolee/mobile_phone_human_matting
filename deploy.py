@@ -16,11 +16,11 @@ import copy
 from model.segnet import SegMattingNet, SegMattInferNet
 
 parser = argparse.ArgumentParser(description='Semantic aware super-resolution')
-parser.add_argument('--model', default='./model/*.pt', help='preTrained model')
-parser.add_argument('--inputPath', default='./', help='input data path')
-parser.add_argument('--savePath', default='./', help='output data path')
+parser.add_argument('--model', default='./pre_trained/erd_seg_matting/model/model_state_dict.pt', help='preTrained model')
+parser.add_argument('--inputPath', default='./test/source', help='input data path')
+parser.add_argument('--savePath', default='./test/source_segment', help='output data path')
 parser.add_argument('--size', type=int, default=128, help='net input size')
-parser.add_argument('--without_gpu', action='store_true', default=False, help='use cpu')
+parser.add_argument('--without_gpu', action='store_true', default=True, help='use cpu')
 
 args = parser.parse_args()
 

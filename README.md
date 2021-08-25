@@ -15,6 +15,8 @@ you need to prepare [dataset](https://github.com/lizhengwei1992/Fast_Portrait_Se
 ## test
 use pre_trained model ```./pre_train/erd_seg_matting```.
 
+generate torchscript model ```python deploy.py --model pre_trained/erd_seg_matting/model/model_state_dict.pt ```
+
 test camera, you need a camera, run ```./camera.sh```.
 test image, run ```./test.sh```.
 
